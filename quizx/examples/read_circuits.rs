@@ -19,7 +19,7 @@ use std::fs;
 use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    for e in fs::read_dir("circuits/small")? {
+    for e in fs::read_dir("circuits/openqasm3")? {
         if let Some(f) = e?.path().to_str() {
             let time = Instant::now();
             println!("{}", f);
