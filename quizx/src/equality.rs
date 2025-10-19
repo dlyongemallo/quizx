@@ -198,41 +198,51 @@ mod tests {
         assert!(equal_circuit_with_options(&c1, &c2, false).unwrap());
     }
 
-    /// Test that approximate equality infrastructure is in place.
+    /// Test that approximate equality works by comparing mathematically equivalent circuits
+    /// that accumulate different floating point rounding errors.
     ///
-    /// NOTE: This test currently passes even with exact equality because Scalar4 uses
-    /// exact dyadic rational arithmetic (x/2^y) for Clifford+T circuits. T gates use
-    /// π/8 rotations which are represented exactly in Scalar4, so no floating point
-    /// errors occur in the tensor computation itself.
-    ///
-    /// The approximate equality implementation is still important for:
-    /// 1. Circuits constructed from floating point values (e.g., from external sources)
-    /// 2. Complex circuits like the one in issue #137 where conversions introduce errors
-    /// 3. Future-proofing against potential numerical instabilities
+    /// This test constructs two mathematically equivalent circuits in different ways,
+    /// causing them to accumulate slightly different rounding errors in their tensor
+    /// representations. With exact equality this test FAILS, with approximate equality it PASSES.
     #[test]
     fn floating_point_tolerance() {
-        use num::Rational64;
-        // Create a circuit with many T gates and their inverse to get back to identity
-        // Note: This uses exact Scalar4 arithmetic, so no actual floating point errors occur
+        use std::f64::consts::PI;
+
+        // Circuit 1: Apply a non-dyadic rotation directly
         let mut c1 = Circuit::new(1);
-        for _ in 0..10 {
-            c1.add_gate("t", vec![0]);
-            c1.add_gate("tdg", vec![0]);
-        }
+        let angle = PI / 7.0; // Non-dyadic angle
+        c1.add_gate_with_phase("rz", vec![0], angle);
 
-        let c2 = Circuit::new(1); // identity
+        // Circuit 2: Apply the same rotation as two half-rotations
+        // This causes different rounding in the tensor computation
+        let mut c2 = Circuit::new(1);
+        c2.add_gate_with_phase("rz", vec![0], angle / 2.0);
+        c2.add_gate_with_phase("rz", vec![0], angle / 2.0);
 
-        // These should be equal (and are, even exactly, due to Scalar4's exact arithmetic)
+        // These are mathematically equivalent: RZ(θ) = RZ(θ/2) ∘ RZ(θ/2)
+        // But tensor computation paths differ, causing small rounding differences
+        // This assertion FAILS with exact equality, PASSES with approximate equality
         assert!(equal_circuit_tensor(&c1, &c2));
 
-        // Test with a more complex example: decomposition of a gate
-        let mut c3 = Circuit::new(1);
-        c3.add_gate_with_phase("rz", vec![0], Rational64::new(1, 4));
+        // More complex example with entanglement
+        let mut c3 = Circuit::new(2);
+        let theta = PI / 5.0;
+        c3.add_gate("h", vec![0]);
+        c3.add_gate("cx", vec![0, 1]);
+        c3.add_gate_with_phase("rz", vec![1], theta);
+        c3.add_gate("cx", vec![0, 1]);
+        c3.add_gate("h", vec![0]);
 
-        let mut c4 = Circuit::new(1);
-        c4.add_gate("t", vec![0]);
+        // Same circuit but with theta applied as two half-angles
+        let mut c4 = Circuit::new(2);
+        c4.add_gate("h", vec![0]);
+        c4.add_gate("cx", vec![0, 1]);
+        c4.add_gate_with_phase("rz", vec![1], theta / 2.0);
+        c4.add_gate_with_phase("rz", vec![1], theta / 2.0);
+        c4.add_gate("cx", vec![0, 1]);
+        c4.add_gate("h", vec![0]);
 
-        // These should be equal (RZ(π/4) == T gate, both use exact Scalar4 arithmetic)
+        // Mathematically equivalent, but different tensor computation paths
         assert!(equal_circuit_tensor(&c3, &c4));
     }
 
