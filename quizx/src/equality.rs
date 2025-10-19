@@ -1,8 +1,9 @@
-use approx::abs_diff_eq;
+use approx::{abs_diff_eq, AbsDiffEq};
 use num::Complex;
 
 use crate::circuit::Circuit;
 use crate::graph::GraphLike;
+use crate::scalar::Scalar4;
 use crate::simplify::full_simp;
 use crate::tensor::ToTensor;
 use crate::vec_graph::Graph;
@@ -31,16 +32,21 @@ pub fn equal_circuit_dim(c1: &Circuit, c2: &Circuit) -> bool {
 
 /// Checks the equality of two circuit graphs by comparing the linear maps they represent.
 /// This approach is only feasible for a small number of qubits. (up to 7)
+/// Uses approximate equality to handle floating point rounding errors.
 pub fn equal_graph_tensor(g1: &Graph, g2: &Graph) -> bool {
     // First, quickly check if both tensors have the same dimension
     if !equal_graph_dim(g1, g2) {
         return false;
     }
-    g1.to_tensor4() == g2.to_tensor4()
+    let t1 = g1.to_tensor4();
+    let t2 = g2.to_tensor4();
+    // Use ndarray's built-in approximate equality (via approx feature)
+    t1.abs_diff_eq(&t2, Scalar4::default_epsilon())
 }
 
 /// Checks the equality of two circuits by comparing the linear maps they represent.
 /// This approach is only feasible for a small number of qubits. (up to 7)
+/// Uses approximate equality to handle floating point rounding errors.
 pub fn equal_circuit_tensor(c1: &Circuit, c2: &Circuit) -> bool {
     let g1: Graph = c1.to_graph();
     let g2: Graph = c2.to_graph();
@@ -190,5 +196,35 @@ mod tests {
 
         // c1 and c2 are verifiably equal
         assert!(equal_circuit_with_options(&c1, &c2, false).unwrap());
+    }
+
+    /// Test that approximate equality works for circuits with floating point rounding errors.
+    /// This test creates a circuit with many gates that would accumulate rounding errors,
+    /// and verifies that two equivalent decompositions are recognized as equal.
+    #[test]
+    fn floating_point_tolerance() {
+        use num::Rational64;
+        // Create a circuit with many T gates and their inverse to get back to identity
+        // This will accumulate floating point errors but should still be recognized as identity
+        let mut c1 = Circuit::new(1);
+        for _ in 0..10 {
+            c1.add_gate("t", vec![0]);
+            c1.add_gate("tdg", vec![0]);
+        }
+
+        let c2 = Circuit::new(1); // identity
+
+        // These should be equal up to floating point tolerance
+        assert!(equal_circuit_tensor(&c1, &c2));
+
+        // Test with a more complex example: decomposition of a gate
+        let mut c3 = Circuit::new(1);
+        c3.add_gate_with_phase("rz", vec![0], Rational64::new(1, 4));
+
+        let mut c4 = Circuit::new(1);
+        c4.add_gate("t", vec![0]);
+
+        // These should be approximately equal
+        assert!(equal_circuit_tensor(&c3, &c4));
     }
 }
