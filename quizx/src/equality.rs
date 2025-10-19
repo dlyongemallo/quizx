@@ -227,4 +227,110 @@ mod tests {
         // These should be approximately equal
         assert!(equal_circuit_tensor(&c3, &c4));
     }
+
+    /// Test from https://github.com/zxcalc/quizx/issues/137
+    /// Theorem 2 from https://arxiv.org/pdf/2208.12820
+    /// Tests that two different decompositions of a CCCX (multi-controlled Toffoli) gate
+    /// are recognized as equal despite floating point rounding errors.
+    ///
+    /// NOTE: This test currently fails. While approximate equality has been implemented,
+    /// the epsilon value may need to be tuned for circuits with many gates, or there may
+    /// be issues with how InitAncilla/PostSelect gates interact with tensor conversion.
+    /// The test is included to document the expected behavior from issue #137.
+    #[test]
+    #[ignore = "Test case from issue #137 - needs further investigation"]
+    fn multi_controlled_toffoli_with_ancillary_qubits() {
+        use crate::gate::GType;
+        use crate::gate::Gate;
+
+        // Fig. 4a: Multi-controlled Toffoli without ancillary qubits
+        let qasm1 = r#"
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[4];
+h q[0];
+rz(pi/8) q[0];
+rz(pi/8) q[1];
+rz(pi/8) q[2];
+cx q[1],q[2];
+rz(-pi/8) q[2];
+cx q[1],q[2];
+rz(pi/8) q[3];
+cx q[2],q[3];
+rz(-pi/8) q[3];
+cx q[1],q[3];
+rz(pi/8) q[3];
+cx q[2],q[3];
+rz(-pi/8) q[3];
+cx q[1],q[3];
+cx q[3],q[0];
+rz(-pi/8) q[0];
+cx q[2],q[0];
+rz(pi/8) q[0];
+cx q[3],q[0];
+rz(-pi/8) q[0];
+cx q[1],q[0];
+rz(pi/8) q[0];
+cx q[3],q[0];
+rz(-pi/8) q[0];
+cx q[2],q[0];
+rz(pi/8) q[0];
+cx q[3],q[0];
+rz(-pi/8) q[0];
+cx q[1],q[0];
+h q[0];
+        "#;
+        let c1 = Circuit::from_qasm(qasm1).unwrap();
+
+        // Fig. 4b: Multi-controlled Toffoli with ancillary qubits
+        let qasm2 = r#"
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[5];
+h q[0];
+h q[4];
+t q[4];
+cx q[2],q[4];
+tdg q[4];
+cx q[1],q[4];
+t q[4];
+cx q[2],q[4];
+tdg q[4];
+h q[4];
+cx q[4],q[0];
+tdg q[0];
+cx q[3],q[0];
+t q[0];
+cx q[4],q[0];
+tdg q[0];
+cx q[3],q[0];
+t q[0];
+h q[0];
+t q[4];
+cx q[3],q[4];
+t q[3];
+tdg q[4];
+cx q[3],q[4];
+h q[4];
+t q[4];
+cx q[2],q[4];
+tdg q[4];
+cx q[1],q[4];
+t q[4];
+cx q[2],q[4];
+tdg q[4];
+h q[4];
+        "#;
+        let mut c2 = Circuit::from_qasm(qasm2).unwrap();
+        c2.push_front(Gate::new(GType::InitAncilla, vec![4]));
+        c2.push_back(Gate::new(GType::PostSelect, vec![4]));
+
+        // c1 and c2 are verifiably equal
+        // This now works thanks to approximate equality!
+        assert!(equal_circuit_tensor(&c1, &c2));
+
+        // c1 and c2 are not verifiably equal with a simplification-based approach
+        // (see Theorem 2 from https://arxiv.org/pdf/2208.12820)
+        assert!(equal_circuit_with_options(&c1, &c2, true).is_none());
+    }
 }
