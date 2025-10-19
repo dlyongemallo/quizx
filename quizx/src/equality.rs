@@ -198,14 +198,22 @@ mod tests {
         assert!(equal_circuit_with_options(&c1, &c2, false).unwrap());
     }
 
-    /// Test that approximate equality works for circuits with floating point rounding errors.
-    /// This test creates a circuit with many gates that would accumulate rounding errors,
-    /// and verifies that two equivalent decompositions are recognized as equal.
+    /// Test that approximate equality infrastructure is in place.
+    ///
+    /// NOTE: This test currently passes even with exact equality because Scalar4 uses
+    /// exact dyadic rational arithmetic (x/2^y) for Clifford+T circuits. T gates use
+    /// π/8 rotations which are represented exactly in Scalar4, so no floating point
+    /// errors occur in the tensor computation itself.
+    ///
+    /// The approximate equality implementation is still important for:
+    /// 1. Circuits constructed from floating point values (e.g., from external sources)
+    /// 2. Complex circuits like the one in issue #137 where conversions introduce errors
+    /// 3. Future-proofing against potential numerical instabilities
     #[test]
     fn floating_point_tolerance() {
         use num::Rational64;
         // Create a circuit with many T gates and their inverse to get back to identity
-        // This will accumulate floating point errors but should still be recognized as identity
+        // Note: This uses exact Scalar4 arithmetic, so no actual floating point errors occur
         let mut c1 = Circuit::new(1);
         for _ in 0..10 {
             c1.add_gate("t", vec![0]);
@@ -214,7 +222,7 @@ mod tests {
 
         let c2 = Circuit::new(1); // identity
 
-        // These should be equal up to floating point tolerance
+        // These should be equal (and are, even exactly, due to Scalar4's exact arithmetic)
         assert!(equal_circuit_tensor(&c1, &c2));
 
         // Test with a more complex example: decomposition of a gate
@@ -224,7 +232,7 @@ mod tests {
         let mut c4 = Circuit::new(1);
         c4.add_gate("t", vec![0]);
 
-        // These should be approximately equal
+        // These should be equal (RZ(π/4) == T gate, both use exact Scalar4 arithmetic)
         assert!(equal_circuit_tensor(&c3, &c4));
     }
 
